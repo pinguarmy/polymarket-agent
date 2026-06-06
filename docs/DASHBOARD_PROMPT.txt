@@ -1,0 +1,181 @@
+Build a self-contained single-file HTML dashboard for a Polymarket algorithmic trading agent. Dark theme, terminal-inspired. No external dependencies — just HTML/CSS/JS in one file.
+
+=== DESIGN PHILOSOPHY ===
+"Just me, a live trading terminal." Minimal, focused, no bloat. Every pixel should answer "what's happening right now and what do I need to do?" — nothing else.
+
+=== THEME ===
+Dark background (#0a0e14 or similar), monospace font stack, green (#00ff88) for profits, red (#ff4444) for losses, amber/white for neutral data. Think Bloomberg terminal but clean. Use subtle borders, no shadows.
+
+=== LAYOUT (top to bottom) ===
+
+[HEADER BAR — full width, sticky]
+- Left: Agent name + status dot (green pulsing = live, yellow = dry-run, red = kill switch engaged)
+- Center: BIG PnL number — color-coded green/red, show both $ and %. Font-size: 2.5rem+
+- Right: Balance (smaller), last updated timestamp
+
+[CONTROL BAR — subtle, below header]
+- [KILL SWITCH] button — big, red, prominent. Confirms before firing.
+- [DRY_RUN ✓/✗] toggle switch — shows current mode, clickable to toggle
+- [⏸ PAUSE AUTO-REFRESH] toggle
+- [☀ MORNING REPORT] button — opens a modal with daily report
+
+[3-COLUMN GRID — main content]
+
+COLUMN 1: POSITIONS
+- Open positions table: market slug (truncated), side (YES/NO badge), entry price, current price, size, unrealized PnL ($ and %), age
+- Each row clickable to expand details (reason, expected edge, risk notes)
+
+COLUMN 2: SIGNALS & ORDERS
+- Pending confirmations section (if any): card with draft order details + [CONFIRM] [CANCEL] buttons — these are CRITICAL, must be prominent with pulsing border
+- Recent signals list: timestamp, market, signal type badge, confidence bar, suggested action
+- Open orders: order ID (short), market, side, price, filled/total
+
+COLUMN 3: ACTIVITY
+- Recent paper trades: side badge, market, price, PnL, timestamp
+- Market watchlist: 3-5 monitored markets with current price, 1h change, spread %
+- Daily stats: trades today, win rate, total PnL today
+
+[FOOTER]
+- Auto-refresh countdown (updates every 15s, shows countdown timer)
+- "Data as of [timestamp]"
+- Connection status indicator
+
+=== DATA SCHEMA (fetched from GET /api/state every 15s) ===
+
+{
+  "mode": "dry_run" | "live" | "killed",
+  "balance_pusd": 254.48,
+  "total_pnl": 3.20,
+  "total_pnl_pct": 1.25,
+  "wallet": "0x9DAF...3E",
+  "timestamp": "2026-04-30T16:00:00Z",
+
+  "open_positions": [
+    {
+      "market_slug": "will-jd-vance...",
+      "side": "YES",
+      "entry_price": 0.387,
+      "current_price": 0.420,
+      "size": 10,
+      "cost": 3.87,
+      "unrealized_pnl": 0.33,
+      "unrealized_pnl_pct": 8.5,
+      "opened_at": "2026-04-30T14:00:00Z",
+      "reason": "Mean reversion signal"
+    }
+  ],
+
+  "pending_confirmations": [
+    {
+      "draft_id": "draft_abc123",
+      "market_slug": "will-okc-win-nba",
+      "side": "YES",
+      "action": "BUY",
+      "limit_price": 0.525,
+      "size": 5,
+      "max_cost": 2.63,
+      "max_loss": 2.63,
+      "reason": "Price anomaly: 7% drop in 1 hour",
+      "risk_notes": "Check spread before confirming",
+      "confidence": 0.65,
+      "spread_pct": 0.5,
+      "created_at": "2026-04-30T15:45:00Z"
+    }
+  ],
+
+  "recent_signals": [
+    {
+      "timestamp": "2026-04-30T15:45:00Z",
+      "signal_type": "price_anomaly",
+      "market_slug": "will-okc-win-nba",
+      "current_price": 0.525,
+      "trigger_reason": "Price dropped 7% in 1 hour",
+      "suggested_action": "BUY YES",
+      "confidence": 0.65
+    }
+  ],
+
+  "open_orders": [
+    {
+      "order_id": "0x3a83...0c",
+      "market_slug": "will-jd-vance...",
+      "side": "BUY",
+      "price": 0.20,
+      "original_size": 25,
+      "filled_size": 0,
+      "status": "open",
+      "created_at": "2026-04-30T15:30:00Z"
+    }
+  ],
+
+  "recent_trades": [
+    {
+      "timestamp": "2026-04-30T15:00:00Z",
+      "market_slug": "will-jd-vance...",
+      "side": "YES",
+      "action": "SELL",
+      "price": 0.42,
+      "size": 10,
+      "pnl": 0.33,
+      "pnl_pct": 8.5
+    }
+  ],
+
+  "watchlist": [
+    {
+      "market_slug": "will-jd-vance-win-2028-gop",
+      "question": "Will J.D. Vance win 2028 GOP nomination?",
+      "yes_price": 0.3875,
+      "change_1h": 0.0015,
+      "spread_pct": 0.1,
+      "volume_24h": 150000
+    }
+  ],
+
+  "daily_stats": {
+    "trades_today": 2,
+    "signals_today": 5,
+    "win_rate": 0.67,
+    "pnl_today": 0.33,
+    "pnl_today_pct": 0.13
+  },
+
+  "auto_refresh_seconds": 15
+}
+
+=== ACTIONS (POST endpoints) ===
+
+POST /api/kill — engage emergency kill switch. Body: {}. Returns: {"status": "killed"}
+POST /api/toggle-mode — flip dry_run/live. Body: {}. Returns: {"mode": "dry_run"|"live"}
+POST /api/confirm — confirm a pending order. Body: {"draft_id": "draft_abc123"}. Returns: {"status": "confirmed"}
+POST /api/cancel-draft — cancel a pending order. Body: {"draft_id": "draft_abc123"}. Returns: {"status": "cancelled"}
+
+=== INTERACTIONS ===
+- Auto-refresh every 15 seconds from GET /api/state
+- ⏸ button pauses/resumes auto-refresh
+- KILL SWITCH requires double-confirmation ("Are you sure? Type KILL to confirm")
+- Pending confirmations pulse with amber border until acted on
+- Click a position row to expand details
+- Hover tooltips on truncated market slugs show full names
+- Toast notifications for: order confirmed, order cancelled, kill switch engaged, errors
+
+=== STYLE NOTES ===
+- Font: 'JetBrains Mono', 'Fira Code', 'Consolas', monospace
+- Use CSS Grid for the 3-column layout
+- Green (#00ff88) = profit/buy/confirmed
+- Red (#ff4444) = loss/sell/kill
+- Amber (#ffaa00) = pending/warning/dry-run
+- Blue (#4488ff) = neutral data
+- White (#e0e0e0) = labels
+- Gray (#666) = secondary text
+- Background #0a0e14, cards #111820, borders #1a2230
+- Subtle CSS transitions on state changes
+- Pulsing animations on pending confirmations
+- Responsive down to 1200px minimum
+
+=== EMPTY STATES ===
+Each section should show a subtle "—" or "No open positions" instead of empty space when data is absent.
+
+=== ERROR STATES ===
+If fetch fails: show "Connection lost — retrying..." in footer, don't clear existing data, exponential backoff retry.
+If API returns error: show toast notification with error message.

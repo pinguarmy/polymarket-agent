@@ -1,0 +1,754 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Paper Trader — Live</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@300;400;500;600;700&display=swap');
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html { font-size: 14px; }
+  body {
+    font-family: 'JetBrains Mono', monospace;
+    background: #0a0e14;
+    color: #e0e0e0;
+    padding: 16px;
+    min-height: 100vh;
+  }
+  .grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 12px;
+    max-width: 1200px;
+    margin: 0 auto;
+  }
+  .card {
+    background: #111820;
+    border: 1px solid #1a2230;
+    border-radius: 8px;
+    padding: 16px;
+  }
+  .card-title {
+    font-size: 0.7rem;
+    color: #667788;
+    text-transform: uppercase;
+    letter-spacing: 0.1em;
+    margin-bottom: 10px;
+    border-bottom: 1px solid #1a2230;
+    padding-bottom: 6px;
+  }
+  .card-title .dot {
+    display: inline-block;
+    width: 8px; height: 8px;
+    border-radius: 50%;
+    margin-right: 6px;
+  }
+  .value {
+    font-size: 1.6rem;
+    font-weight: 600;
+  }
+  .value.up { color: #00ff88; }
+  .value.down { color: #ff4444; }
+  .value.flat { color: #ffaa00; }
+  .sub {
+    font-size: 0.75rem;
+    color: #667788;
+    margin-top: 2px;
+  }
+  .row {
+    display: flex;
+    justify-content: space-between;
+    padding: 4px 0;
+    font-size: 0.8rem;
+    border-bottom: 1px solid #0d1520;
+  }
+  .row:last-child { border-bottom: none; }
+  .label { color: #667788; }
+  .good { color: #00ff88; }
+  .warn { color: #ffaa00; }
+  .bad  { color: #ff4444; }
+  .info { color: #4488ff; }
+  .trade-log {
+    max-height: 200px;
+    overflow-y: auto;
+    font-size: 0.75rem;
+    line-height: 1.4;
+  }
+  .trade-entry {
+    padding: 3px 0;
+    border-bottom: 1px solid #0d1520;
+  }
+  .trade-entry:last-child { border-bottom: none; }
+  .trade-entry .side { font-weight: 600; }
+  .timestamp {
+    font-size: 0.65rem;
+    color: #445566;
+    text-align: right;
+    margin-top: 8px;
+  }
+  .full-width { grid-column: 1 / -1; }
+  .btc-ticker {
+    font-size: 2rem;
+    font-weight: 700;
+  }
+  .spread-bar {
+    display: inline-block;
+    height: 6px;
+    border-radius: 3px;
+    background: #1a2230;
+    position: relative;
+    width: 100%;
+    max-width: 200px;
+  }
+  .spread-fill {
+    height: 100%;
+    border-radius: 3px;
+    background: linear-gradient(90deg, #00ff88, #ffaa00, #ff4444);
+  }
+  .trades-section { margin-top: 8px; }
+  .no-trades {
+    color: #445566;
+    text-align: center;
+    padding: 12px;
+    font-size: 0.8rem;
+  }
+  .trader-status.online { color: #00ff88; }
+  .trader-status.offline { color: #ff4444; }
+  blink {
+    animation: blink-anim 1.2s ease-in-out infinite;
+  }
+  @keyframes blink-anim {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.3; }
+  }
+  /* Price chart */
+  .chart-wrap {
+    position: relative;
+    width: 100%;
+    height: 220px;
+  }
+  .chart-wrap canvas {
+    width: 100%;
+    height: 100%;
+    border-radius: 4px;
+  }
+  .chart-legend {
+    display: flex;
+    gap: 16px;
+    font-size: 0.7rem;
+    color: #667788;
+    margin-top: 6px;
+  }
+  .chart-legend span { display: flex; align-items: center; gap: 4px; }
+  .legend-dot { width: 8px; height: 8px; border-radius: 50%; display: inline-block; }
+  /* PnL chart */
+  .pnl-card { margin-top: 0; }
+  .pnl-value { font-size: 1.4rem; font-weight: 600; }
+  .pnl-value.pos { color: #00ff88; }
+  .pnl-value.neg { color: #ff4444; }
+  .pnl-value.zero { color: #ffaa00; }
+  .pnl-wrap { position: relative; width: 100%; height: 180px; }
+  .pnl-wrap canvas { width: 100%; height: 100%; border-radius: 4px; }
+  @media (max-width: 800px) {
+    .grid { grid-template-columns: 1fr; }
+  }
+</style>
+</head>
+<body>
+
+<div class="grid" id="app">
+  <!-- BTC Ticker -->
+  <div class="card">
+    <div class="card-title"><span class="dot" style="background:#ffaa00"></span>BTC Price</div>
+    <div class="btc-ticker" id="btc-price">--</div>
+    <div class="row" style="margin-top:4px">
+      <span class="label">Change</span>
+      <span id="btc-change">--</span>
+    </div>
+    <div class="row">
+      <span class="label">Open</span>
+      <span id="btc-open">--</span>
+    </div>
+  </div>
+
+  <!-- Position -->
+  <div class="card">
+    <div class="card-title"><span class="dot" style="background:#4488ff"></span>Market</div>
+    <div class="row">
+      <span class="label">Status</span>
+      <span id="trader-status">offline</span>
+    </div>
+    <div class="row">
+      <span class="label">Market</span>
+      <span id="market-slug">--</span>
+    </div>
+    <div class="row">
+      <span class="label">Time Left</span>
+      <span id="time-left">--</span>
+    </div>
+  </div>
+
+  <!-- Order Book -->
+  <div class="card">
+    <div class="card-title"><span class="dot" style="background:#00ff88"></span>Up Token Price</div>
+    <div class="value" id="yes-bid">--</div>
+    <div class="sub">Bid (highest Up buyer)</div>
+    <div class="value" style="font-size:1.2rem;margin-top:8px" id="yes-ask">--</div>
+    <div class="sub">Ask (lowest Up seller)</div>
+    <div class="row" style="margin-top:8px">
+      <span class="label">Spread</span>
+      <span id="spread">--</span>
+    </div>
+  </div>
+
+  <!-- Strategy -->
+  <div class="card">
+    <div class="card-title"><span class="dot" style="background:#aa66ff"></span>FOLLOW Strategy</div>
+    <div class="row">
+      <span class="label">Entries</span>
+      <span id="entries">0</span>
+    </div>
+    <div class="row">
+      <span class="label">Direction</span>
+      <span id="direction">watching...</span>
+    </div>
+    <div class="row">
+      <span class="label">BTC Signal</span>
+      <span id="btc-signal">--</span>
+    </div>
+    <div class="sub" style="margin-top:4px;font-size:0.7rem;color:#445566">
+      BTC up + Up ≤ 0.45 → BUY DOWN (NO) &nbsp;|&nbsp; BTC down + Up ≥ 0.55 → BUY UP (YES)
+    </div>
+  </div>
+
+  <!-- Skipped Signals -->
+  <div class="card">
+    <div class="card-title"><span class="dot" style="background:#ff6644"></span>Skipped Signals</div>
+    <div id="skipped-list" style="font-size:0.75rem;max-height:160px;overflow-y:auto">
+      <div class="no-trades">No skipped signals</div>
+    </div>
+  </div>
+
+  <!-- Data Health -->
+  <div class="card">
+    <div class="card-title"><span class="dot" style="background:#44ff66"></span>Data Health</div>
+    <div class="row"><span class="label">Chainlink</span><span id="chainlink-status">--</span></div>
+    <div class="row"><span class="label">Age</span><span id="chainlink-age">--</span></div>
+    <div class="row"><span class="label">Latency</span><span id="chainlink-latency">--</span></div>
+    <div class="row"><span class="label">CLOB Mid</span><span id="clob-mid">--</span></div>
+  </div>
+
+  <!-- Trades Log -->
+  <div class="card full-width">
+    <div class="card-title"><span class="dot" style="background:#ffaa00"></span>Paper Trades</div>
+    <div class="trade-log" id="trade-log">
+      <div class="no-trades">Waiting for market signal...</div>
+    </div>
+  </div>
+
+  <!-- Price History Chart -->
+  <div class="card full-width">
+    <div class="card-title">
+      <span class="dot" style="background:#4488ff"></span>Live YES Price (UI-aligned)
+      <span style="float:right;color:#445566;font-size:0.65rem" id="chart-points">0 pts</span>
+    </div>
+    <div class="chart-wrap">
+      <canvas id="price-chart"></canvas>
+    </div>
+    <div class="chart-legend">
+      <span><span class="legend-dot" style="background:#00ff88"></span>Up☆ midpoint</span>
+      <span style="margin-left:auto;color:#445566">← last 5 min →</span>
+    </div>
+  <!-- PnL Chart -->
+  <div class="card full-width pnl-card">
+    <div class="card-title">
+      <span class="dot" style="background:#ffaa00"></span>Realized PnL
+      <span class="pnl-value zero" id="pnl-total" style="float:right;font-size:1rem">$0.00</span>
+    </div>
+    <div class="pnl-wrap">
+      <canvas id="pnl-chart"></canvas>
+    </div>
+    <div class="chart-legend">
+      <span><span class="legend-dot" style="background:#00ff88"></span>cumulative profit/loss</span>
+      <span style="margin-left:auto;color:#445566">← trades over time →</span>
+    </div>
+  </div>
+</div>
+
+<div class="timestamp" id="ts"></div>
+
+<script>
+const API = '/api/paper-state';
+const CHART_SECONDS = 300; // 5 min window
+const CHART_HEIGHT = 200;
+
+// Data accumulator
+const history = [];
+let lastDraw = 0;
+const canvas = document.getElementById('price-chart');
+const ctx = canvas.getContext('2d');
+
+function resizeCanvas() {
+  const rect = canvas.parentElement.getBoundingClientRect();
+  canvas.width = rect.width * 2;  // retina
+  canvas.height = CHART_HEIGHT * 2;
+  canvas.style.width = rect.width + 'px';
+  canvas.style.height = CHART_HEIGHT + 'px';
+  ctx.scale(2, 2);
+}
+
+function fmtTime() {
+  return new Date().toLocaleTimeString();
+}
+
+function fmtShortTime(ts) {
+  const d = new Date(ts);
+  return d.getHours().toString().padStart(2,'0') + ':' +
+         d.getMinutes().toString().padStart(2,'0') + ':' +
+         d.getSeconds().toString().padStart(2,'0');
+}
+
+async function fetchState() {
+  try {
+    const res = await fetch(API, { signal: AbortSignal.timeout(5000) });
+    if (!res.ok) return null;
+    return await res.json();
+  } catch { return null; }
+}
+
+async function fetchSkipped() {
+  try {
+    const res = await fetch('/api/skipped-signals', { signal: AbortSignal.timeout(3000) });
+    if (!res.ok) return [];
+    return await res.json();
+  } catch { return []; }
+}
+
+async function fetchChainlink() {
+  try {
+    const res = await fetch('/api/chainlink-health', { signal: AbortSignal.timeout(3000) });
+    if (!res.ok) return null;
+    return await res.json();
+  } catch { return null; }
+}
+
+function drawChart() {
+  const w = canvas.width / 2;
+  const h = CHART_HEIGHT;
+  
+  // Trim old data
+  const cutoff = Date.now() - CHART_SECONDS * 1000;
+  while (history.length > 0 && history[0].t < cutoff) history.shift();
+  
+  if (history.length < 2) {
+    // Clear
+    ctx.clearRect(0, 0, w, h);
+    ctx.fillStyle = '#1a2230';
+    ctx.font = '12px JetBrains Mono, monospace';
+    ctx.textAlign = 'center';
+    ctx.fillText('Collecting data...', w/2, h/2);
+    return;
+  }
+
+  // Determine Y range
+  const bids = history.map(p => p.bid).filter(v => v !== null && v > 0);
+  const asks = history.map(p => p.ask).filter(v => v !== null && v > 0);
+  const rawBids = history.map(p => p.raw).filter(v => v !== null && v > 0);
+  const all = [...bids, ...asks, ...rawBids];
+  if (all.length === 0) return;
+  
+  let yMin = Math.min(...all);
+  let yMax = Math.max(...all);
+  const range = yMax - yMin;
+  if (range < 0.05) { yMin = Math.max(0, yMin - 0.025); yMax = Math.min(1, yMax + 0.025); }
+  else { yMin = Math.max(0, yMin - range * 0.1); yMax = Math.min(1, yMax + range * 0.1); }
+  
+  // Time range
+  const tMin = history[0].t;
+  const tMax = history[history.length - 1].t;
+  const tRange = Math.max(tMax - tMin, 1000);
+
+  function xPos(t) { return 20 + (t - tMin) / tRange * (w - 30); }
+  function yPos(v) { return 12 + (1 - (v - yMin) / (yMax - yMin)) * (h - 24); }
+
+  // Clear
+  ctx.clearRect(0, 0, w, h);
+  
+  // Grid
+  ctx.strokeStyle = '#141e2a';
+  ctx.lineWidth = 1;
+  for (let y = yMin; y <= yMax; y += Math.max(0.01, (yMax - yMin) / 5)) {
+    const yy = yPos(y);
+    ctx.beginPath();
+    ctx.moveTo(20, yy);
+    ctx.lineTo(w - 10, yy);
+    ctx.stroke();
+    ctx.fillStyle = '#445566';
+    ctx.font = '9px JetBrains Mono, monospace';
+    ctx.textAlign = 'right';
+    ctx.fillText(y.toFixed(2) + '', 18, yy + 3);
+  }
+  
+  // Y-axis labels on right
+  ctx.textAlign = 'left';
+  for (let y = yMin; y <= yMax; y += Math.max(0.01, (yMax - yMin) / 5)) {
+    const yy = yPos(y);
+    ctx.fillText(y.toFixed(2) + '', w - 8, yy + 3);
+  }
+
+  // X-axis time labels
+  ctx.textAlign = 'center';
+  for (let i = 0; i < 6; i++) {
+    const t = tMin + tRange * i / 5;
+    if (t >= tMin && t <= tMax) {
+      ctx.fillStyle = '#445566';
+      ctx.font = '9px JetBrains Mono, monospace';
+      ctx.fillText(fmtShortTime(t), xPos(t), h - 2);
+    }
+  }
+
+  // Draw lines
+  function drawLine(data, getY, color) {
+    const points = data
+      .map(p => ({ x: xPos(p.t), y: yPos(getY(p)) }))
+      .filter(p => p.y >= 0 && p.y <= h && isFinite(p.y));
+    if (points.length < 2) return;
+    ctx.strokeStyle = color;
+    ctx.lineWidth = 1.5;
+    ctx.beginPath();
+    ctx.moveTo(points[0].x, points[0].y);
+    for (let i = 1; i < points.length; i++) {
+      ctx.lineTo(points[i].x, points[i].y);
+    }
+    ctx.stroke();
+  }
+
+  // Draw UI YES bid (same as midpoint here)
+  function bidVal(p) { return p.bid; }
+  drawLine(history, bidVal, '#00ff88');
+
+  // Update point count
+  document.getElementById('chart-points').textContent = history.length + ' pts';
+}
+
+function pushData(data) {
+  if (!data) return;
+  history.push({
+    t: Date.now(),
+    bid: data.yes_bid,
+    ask: data.yes_ask,
+    btc: data.btc_price,
+  });
+}
+
+function render(data) {
+  if (!data) {
+    document.querySelectorAll('.row span:last-child').forEach(el => el.textContent = '--');
+    document.getElementById('trader-status').innerHTML = '<span class="trader-status offline">offline</span>';
+    return;
+  }
+
+  // Trader status
+  const statusEl = document.getElementById('trader-status');
+  if (data.running) {
+    statusEl.innerHTML = '<span class="trader-status online"><blink>●</blink> online</span>';
+  } else {
+    statusEl.innerHTML = '<span class="trader-status offline">● offline</span>';
+  }
+
+  // BTC price
+  const btcEl = document.getElementById('btc-price');
+  if (data.btc_price) {
+    btcEl.textContent = '$' + data.btc_price.toLocaleString();
+  }
+
+  // BTC change
+  const changeEl = document.getElementById('btc-change');
+  if (data.btc_change !== null) {
+    const sign = data.btc_change >= 0 ? '+' : '';
+    const cls = data.btc_change > 3 ? 'good' : data.btc_change < -3 ? 'bad' : 'warn';
+    changeEl.innerHTML = `<span class="${cls}">${sign}$${Math.abs(data.btc_change)}</span>`;
+  }
+
+  // Market
+  document.getElementById('market-slug').textContent = data.market_slug ? 
+    data.market_slug.slice(-30) : '--';
+  
+  const timeEl = document.getElementById('time-left');
+  if (data.time_remaining !== null) {
+    const mins = Math.floor(data.time_remaining / 60);
+    const secs = data.time_remaining % 60;
+    timeEl.textContent = `${mins}:${secs.toString().padStart(2,'0')}`;
+  }
+
+  // YES bid/ask (UI-aligned)
+  const bidEl = document.getElementById('yes-bid');
+  const askEl = document.getElementById('yes-ask');
+  if (data.yes_bid !== null) bidEl.textContent = data.yes_bid.toFixed(3);
+  if (data.yes_ask !== null) askEl.textContent = data.yes_ask.toFixed(3);
+
+  // Spread
+  const spreadEl = document.getElementById('spread');
+  if (data.yes_bid !== null && data.yes_ask !== null && data.yes_ask > data.yes_bid) {
+    const spreadPct = ((data.yes_ask - data.yes_bid) / data.yes_ask * 100).toFixed(1);
+    const cls = spreadPct < 10 ? 'good' : spreadPct < 30 ? 'warn' : 'bad';
+    spreadEl.innerHTML = `<span class="${cls}">${spreadPct}%</span>`;
+  }
+
+  // Entries
+  document.getElementById('entries').textContent = data.entries_this_market || 0;
+
+  // Direction signal
+  const dirEl = document.getElementById('direction');
+  if (data.entries_this_market > 0) {
+    const lastTrade = data.trades && data.trades.length > 0 ? 
+      data.trades[data.trades.length - 1] : '';
+    if (lastTrade.includes('BUY YES')) dirEl.innerHTML = '<span class="good">⬆ BUY UP</span>';
+    else if (lastTrade.includes('BUY NO')) dirEl.innerHTML = '<span class="bad">⬇ BUY DOWN</span>';
+    else dirEl.textContent = 'active';
+  } else if (data.yes_bid !== null && data.yes_ask !== null) {
+    const mid = (data.yes_bid + data.yes_ask) / 2;
+    if (mid <= 0.45) dirEl.innerHTML = '<span class="info">watching (Up low → BUY DOWN setup)</span>';
+    else if (mid >= 0.55) dirEl.innerHTML = '<span class="info">watching (Up high → BUY UP setup)</span>';
+    else dirEl.textContent = 'watching...';
+  }
+
+  // BTC signal
+  const sigEl = document.getElementById('btc-signal');
+  if (data.btc_change !== null && Math.abs(data.btc_change) >= 5) {
+    if (data.btc_change > 0) sigEl.innerHTML = '<span class="good">BUY_DOWN setup (BTC up)</span>';
+    else sigEl.innerHTML = '<span class="bad">BUY_UP setup (BTC down)</span>';
+  } else {
+    sigEl.textContent = 'BTC flat (need ≥$5)';
+  }
+
+  // Trades log
+  const logEl = document.getElementById('trade-log');
+  if (data.trades && data.trades.length > 0) {
+    const trades = data.trades.filter(t => t.includes('DRY') || t.includes('FOLLOW'));
+    if (trades.length > 0) {
+      logEl.innerHTML = trades.reverse().map(t => {
+        const cls = t.includes('BUY YES') ? 'good' : t.includes('BUY NO') ? 'bad' : 'info';
+        const display = t.replace('BUY YES', 'BUY UP').replace('BUY NO', 'BUY DOWN');
+        return `<div class="trade-entry"><span class="side ${cls}">${display.slice(0,80)}</span></div>`;
+      }).join('');
+    }
+  }
+
+  // Timestamp
+  document.getElementById('ts').textContent = 'Updated ' + fmtTime();
+}
+
+// PnL Chart
+const pnlCanvas = document.getElementById('pnl-chart');
+const pnlCtx = pnlCanvas.getContext('2d');
+const pnlHistory = []; // [{t, cumulative}]
+let lastTradeCount = 0;
+
+function resizePnlCanvas() {
+  const rect = pnlCanvas.parentElement.getBoundingClientRect();
+  pnlCanvas.width = rect.width * 2;
+  pnlCanvas.height = 180 * 2;
+  pnlCtx.scale(2, 2);
+}
+
+function updatePnL(data) {
+  if (!data || !data.trades) return;
+  const trades = data.trades.filter(t => t.includes('DRY') || t.includes('FOLLOW'));
+  if (trades.length === lastTradeCount) return;
+
+  // Parse newly-added trades
+  for (let i = lastTradeCount; i < trades.length; i++) {
+    const t = trades[i];
+    let pnl = 0;
+    // Log format:
+    // "  🟢 DRY: FOLLOW BUY NO: BTC+$7 but YES=0.580 (manip buying NO)"
+    // "         Entry #1 | NO @ 0.420 x 8.0 = $3.36 | YES mid=0.580"
+    //
+    // BUY YES at entry_price → cost = entry_price * shares
+    // At current YES price (yes_bid), position value = yes_bid * shares
+    // PnL = current_value - cost = (yes_bid - entry_price) * shares
+    //
+    // BUY NO at entry_price → NO price = 1 - yes_bid
+    // At current YES price, NO price = 1 - yes_bid
+    // PnL = ((1 - yes_bid) - entry_price) * shares = (1 - yes_bid - entry_price) * shares
+    const m = t.match(/Entry #\d+ \| (YES|NO) @ ([\d.]+) x ([\d.]+) = \$([\d.]+)/);
+    if (m) {
+      const side = m[1];
+      const entryPrice = parseFloat(m[2]);
+      const size = parseFloat(m[3]);
+      const cost = parseFloat(m[4]);
+      const shares = cost / entryPrice; // derive shares from cost
+      const yesPrice = data.yes_bid || entryPrice;
+
+      if (side === 'YES') {
+        pnl = (yesPrice - entryPrice) * shares;
+      } else {
+        // NO price = 1 - YES price
+        pnl = (1 - yesPrice - entryPrice) * shares;
+      }
+    }
+    const last = pnlHistory.length > 0 ? pnlHistory[pnlHistory.length - 1].cumulative : 0;
+    pnlHistory.push({ t: Date.now(), cumulative: last + pnl });
+  }
+  lastTradeCount = trades.length;
+}
+
+function drawPnLChart() {
+  const w = pnlCanvas.width / 2;
+  const h = 180;
+
+  resizePnlCanvas();
+
+  if (pnlHistory.length < 2) {
+    pnlCtx.clearRect(0, 0, w, h);
+    pnlCtx.fillStyle = '#1a2230';
+    pnlCtx.font = '12px JetBrains Mono, monospace';
+    pnlCtx.textAlign = 'center';
+    pnlCtx.fillText('Collecting trade data...', w / 2, h / 2);
+    return;
+  }
+
+  const values = pnlHistory.map(p => p.cumulative);
+  let yMin = Math.min(...values);
+  let yMax = Math.max(...values);
+  const range = yMax - yMin;
+  if (range < 0.01) { yMin = Math.max(-10, yMin - 0.5); yMax = Math.min(10, yMax + 0.5); }
+  else { yMin -= range * 0.15; yMax += range * 0.15; }
+
+  const tMin = pnlHistory[0].t;
+  const tMax = pnlHistory[pnlHistory.length - 1].t;
+  const tRange = Math.max(tMax - tMin, 1000);
+
+  function xPos(t) { return 20 + (t - tMin) / tRange * (w - 30); }
+  function yPos(v) { return 12 + (1 - (v - yMin) / (yMax - yMin)) * (h - 24); }
+
+  pnlCtx.clearRect(0, 0, w, h);
+
+  // Zero line
+  const zeroY = yPos(0);
+  if (zeroY >= 0 && zeroY <= h) {
+    pnlCtx.strokeStyle = '#334155';
+    pnlCtx.lineWidth = 1;
+    pnlCtx.setLineDash([4, 4]);
+    pnlCtx.beginPath();
+    pnlCtx.moveTo(20, zeroY);
+    pnlCtx.lineTo(w - 10, zeroY);
+    pnlCtx.stroke();
+    pnlCtx.setLineDash([]);
+  }
+
+  // Grid
+  pnlCtx.strokeStyle = '#141e2a';
+  pnlCtx.lineWidth = 1;
+  for (let y = yMin; y <= yMax; y += Math.max(0.01, (yMax - yMin) / 4)) {
+    const yy = yPos(y);
+    if (yy < 0 || yy > h) continue;
+    pnlCtx.beginPath();
+    pnlCtx.moveTo(20, yy);
+    pnlCtx.lineTo(w - 10, yy);
+    pnlCtx.stroke();
+    pnlCtx.fillStyle = '#445566';
+    pnlCtx.font = '9px JetBrains Mono, monospace';
+    pnlCtx.textAlign = 'right';
+    pnlCtx.fillText('$' + y.toFixed(2), 18, yy + 3);
+  }
+
+  // X-axis labels
+  pnlCtx.textAlign = 'center';
+  for (let i = 0; i < 6; i++) {
+    const t = tMin + tRange * i / 5;
+    if (t >= tMin && t <= tMax) {
+      pnlCtx.fillStyle = '#445566';
+      pnlCtx.font = '9px JetBrains Mono, monospace';
+      pnlCtx.fillText(fmtShortTime(t), xPos(t), h - 2);
+    }
+  }
+
+  // Draw area fill (green if positive, red if negative overall)
+  const points = pnlHistory.map(p => ({ x: xPos(p.t), y: yPos(p.cumulative) }));
+  const fillColor = values[values.length - 1] >= 0 ? 'rgba(0,255,136,0.1)' : 'rgba(255,68,68,0.1)';
+  pnlCtx.fillStyle = fillColor;
+  pnlCtx.beginPath();
+  pnlCtx.moveTo(points[0].x, zeroY);
+  for (const p of points) pnlCtx.lineTo(p.x, p.y);
+  pnlCtx.lineTo(points[points.length - 1].x, zeroY);
+  pnlCtx.closePath();
+  pnlCtx.fill();
+
+  // Draw line
+  const lineColor = values[values.length - 1] >= 0 ? '#00ff88' : '#ff4444';
+  pnlCtx.strokeStyle = lineColor;
+  pnlCtx.lineWidth = 2;
+  pnlCtx.beginPath();
+  pnlCtx.moveTo(points[0].x, points[0].y);
+  for (let i = 1; i < points.length; i++) pnlCtx.lineTo(points[i].x, points[i].y);
+  pnlCtx.stroke();
+
+  // Update total display
+  const total = values[values.length - 1];
+  const totalEl = document.getElementById('pnl-total');
+  const cls = total > 0 ? 'pos' : total < 0 ? 'neg' : 'zero';
+  const sign = total > 0 ? '+' : '';
+  totalEl.className = 'pnl-value ' + cls;
+  totalEl.textContent = sign + '$' + total.toFixed(2);
+}
+
+// ── Skipped Signals ──
+function renderSkipped(data) {
+  const el = document.getElementById('skipped-list');
+  if (!data || data.length === 0) {
+    el.innerHTML = '<div class="no-trades">No skipped signals</div>';
+    return;
+  }
+  const reversed = data.slice(-5).reverse();
+  el.innerHTML = reversed.map(s => {
+    const reason = s.skip_reason === 'wide_spread' ? '⚠️ wide spread' : s.skip_reason;
+    const btc = s.btc_change >= 0 ? '+' + s.btc_change : s.btc_change;
+    const pct = (s.spread_pct_mid * 100).toFixed(1);
+    return `<div class="trade-entry"><span class="side warn">${reason}</span><br>` +
+      `<span style="color:#667788">BTC $${btc} · spread ${pct}% · YES=${s.yes_price}</span></div>`;
+  }).join('');
+}
+
+// ── Chainlink Health ──
+function renderChainlink(data) {
+  const statusEl = document.getElementById('chainlink-status');
+  const ageEl = document.getElementById('chainlink-age');
+  const latEl = document.getElementById('chainlink-latency');
+  const midEl = document.getElementById('clob-mid');
+  if (!data || !data.healthy) {
+    statusEl.innerHTML = '<span class="bad">offline</span>';
+    ageEl.textContent = '--'; latEl.textContent = '--'; midEl.textContent = '--';
+    return;
+  }
+  statusEl.innerHTML = '<span class="good">● live</span>';
+  ageEl.textContent = data.age_seconds + 's';
+  latEl.textContent = data.latency_ms + 'ms';
+  midEl.textContent = '$' + (data.latest_price ? Math.round(data.latest_price).toLocaleString() : '--');
+}
+
+async function tick() {
+  const data = await fetchState();
+  pushData(data);
+  render(data);
+  drawChart();
+  updatePnL(data);
+  drawPnLChart();
+
+  // Extra fetches
+  const skipped = await fetchSkipped();
+  renderSkipped(skipped);
+  const cl = await fetchChainlink();
+  renderChainlink(cl);
+}
+
+// Init
+resizeCanvas();
+resizePnlCanvas();
+window.addEventListener('resize', () => { resizeCanvas(); resizePnlCanvas(); });
+tick();
+setInterval(tick, 500);
+</script>
+</body>
+</html>

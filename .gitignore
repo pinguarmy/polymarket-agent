@@ -1,0 +1,47 @@
+# Secrets — NEVER COMMIT
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*.crt
+*.p12
+*.pfx
+
+# Local runtime data / market history
+logs/
+!logs/.gitkeep
+data/
+!data/.gitkeep
+*.db
+*.sqlite
+*.sqlite3
+*.csv
+*.jsonl
+*.log
+
+# Reports or exports that may contain private trading history
+exports/
+private/
+
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+.venv/
+venv/
+*.egg-info/
+dist/
+build/
+.pytest_cache/
+.coverage
+htmlcov/
+
+# IDE / OS
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+Thumbs.db
