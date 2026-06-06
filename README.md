@@ -1,6 +1,8 @@
-# Polymarket Agent — Research & Paper Trading Assistant
+# Polymarket Agent — Safety-First Prediction Market Research Lab
 
-A **human-in-the-loop** Polymarket research and trading assistant built for safety, transparency, and incremental capability progression.
+A **human-in-the-loop** Polymarket research and paper-trading assistant for exploring prediction-market data, BTC 5-minute markets, risk controls, and transparent trading workflows.
+
+Think of it as a small research cockpit: collectors pull market and price data, strategy scripts test ideas, dashboards make the system observable, and the risk engine keeps the project grounded in safe defaults before anything can approach real trading.
 
 ## Project Goal
 
